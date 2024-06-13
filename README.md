@@ -31,4 +31,5 @@ The marker detection algorithm involves the following stages:
    
    ```bash
    make
-   ./app  ```
+   ./app
+   ```
