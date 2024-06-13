@@ -1,0 +1,217 @@
+     1                                          section .text
+     2                                          global  find_markers
+     3                                  
+     4                                  find_markers:
+     5                                          ; bmp           rdi
+     6                                          ; xArrayPtr     rsi
+     7                                          ; YArrayPtr     rdx
+     8                                          ; found         rax
+     9                                          ; xx            rcx
+    10                                          ; yy            rbx
+    11                                          ; width         r8
+    12                                          ; height        r9
+    13                                          ; amount        r10
+    14                                          ; checkLength   r11
+    15                                          ; counter       r12
+    16                                          ; cx            r13
+    17                                          ; cy            r14
+    18                                          ; myflags       r15
+    19                                          
+    20 00000000 55                              push rbp                        
+    21 00000001 53                              push rbx                        
+    22 00000002 4154                            push r12                        
+    23 00000004 4155                            push r13                        
+    24 00000006 4156                            push r14                        
+    25 00000008 4157                            push r15    
+    26                                  
+    27 0000000A 448B4712                        mov r8d, dword [rdi + 18]       ; load the width of the picture into the bottom 32 bits
+    28 0000000E 448B4F16                        mov r9d, dword [rdi + 22]       ; same with the width
+    29 00000012 8B470A                          mov eax, dword [rdi + 10]       ; offset
+    30 00000015 4801C7                          add rdi, rax                    ; offset + picture address
+    31                                  
+    32 00000018 4831C0                          xor rax, rax                    ; counter "How many markers have we found = 0
+    33 0000001B 4831C9                          xor rcx, rcx                    ; Prepare width loop (xx = 0), который мы проверяем на маркер
+    34                                  
+    35                                  width_loop:
+    36 0000001E 4831DB                          xor rbx, rbx                    ; Prepare height loop (yy = 0) который мы проверяем на маркер
+    37                                  
+    38                                  height_loop:
+    39 00000021 4989CD                          mov r13, rcx                    ; Set cx = xx, от него будем бегать что б посчитать длину маркера
+    40 00000024 4989DE                          mov r14, rbx                    ; Set cy = yy 
+    41 00000027 4D31D2                          xor r10, r10                    ; Set length to zero (so we count down the cells)(он будет уходить в минус, типо на каждый блок длины)
+    42                                          
+    43 0000002A E800010000                      call walk_left_black            ; find length
+    44                                  
+    45 0000002F 49F7DA                          neg r10                         ; The length is negative. So invert
+    46 00000032 4D8D5A01                        lea r11, [r10 + 1]              ; length++
+    47 00000036 4C8D6901                        lea r13, [rcx + 1]              ; cx = xx + 1
+    48 0000003A 4C8D7301                        lea r14, [rbx + 1]              ; cy = yy + 1
+    49                                  
+    50 0000003E 4D89DA                          mov r10, r11                    ; Set the initial length to the one we want to check (the function will stop automatically at -1)
+    51 00000041 E8D9000000                      call walt_left_white            ; Note that setting it to -1 means the function will traverse one more cell than specified. This is intentional to verify the corner
+    52                                  
+    53 00000046 4983FA00                        cmp r10, 0                      ; >= 0 -> not_marker (find next marker)
+    54 0000004A 0F8DA4000000                    jge not_marker                  
+    55                                  
+    56 00000050 4C8D6901                        lea r13, [rcx + 1]              ; cx = xx + 1
+    57 00000054 4989DE                          mov r14, rbx                    ; cy = yy
+    58                                  
+    59 00000057 49FFCB                          dec r11                         
+    60 0000005A 4D89DA                          mov r10, r11                    
+    61                                  
+    62 0000005D E8B5000000                      call walk_down_white            
+    63                                  
+    64 00000062 4983FA00                        cmp r10, 0                      
+    65 00000066 0F8D88000000                    jge not_marker                  
+    66                                  
+    67 0000006C 4D31E4                          xor r12, r12                    ; Offset counter inside the marker to check its insides  = 0
+    68                                  
+    69                                  inmarker_loop:
+    70 0000006F 49FFC4                          inc r12                         ; Offset counter++
+    71                                  
+    72 00000072 4C8D6901                        lea r13, [rcx + 1]              ; cx = xx - counter - 1:
+    73 00000076 4D29E5                          sub r13, r12   
+    74                                  
+    75 00000079 4989DE                          mov r14, rbx                    
+    76 0000007C 4D29E6                          sub r14, r12                    ; cy = yy - counter
+    77                                  
+    78 0000007F 49FFCB                          dec r11                         
+    79 00000082 4D89DA                          mov r10, r11                    
+    80 00000085 E89D000000                      call walk_down_black            
+    81                                  
+    82 0000008A 4D85D2                          test r10, r10                   ; if != 0 -> not_marker
+    83 0000008D 7565                            jnz not_marker                  
+    84                                  
+    85 0000008F 4989CD                          mov r13, rcx                    
+    86 00000092 4D29E5                          sub r13, r12                    ; cx = xx - counter
+    87                                  
+    88 00000095 4989DE                          mov r14, rbx                    
+    89 00000098 4D29E6                          sub r14, r12                    ; cy = yy - counter
+    90                                  
+    91 0000009B 4D89DA                          mov r10, r11                    ; copy length
+    92                                  
+    93 0000009E E88C000000                      call walk_left_black         
+    94                                  
+    95 000000A3 4D85D2                          test r10, r10                   ; Check f right size -> inmarker_loop (Continue checking further.)
+    96 000000A6 74C7                            jz inmarker_loop      
+    97                                  
+    98 000000A8 4989CD                          mov r13, rcx                    ; Otherwise, check that the end of the marker is properly closed with non-black pixels.
+    99 000000AB 4D29E5                          sub r13, r12                    
+   100                                  
+   101 000000AE 4989DE                          mov r14, rbx                    
+   102 000000B1 4D29E6                          sub r14, r12                    
+   103                                  
+   104 000000B4 4D89DA                          mov r10, r11                    
+   105 000000B7 E863000000                      call walt_left_white            ; Вот сама проверка
+   106                                  
+   107 000000BC 4983FA00                        cmp r10, 0                      
+   108 000000C0 7D32                            jge not_marker                  
+   109                                  
+   110 000000C2 4989CD                          mov r13, rcx                    ; cx = xx - counter
+   111 000000C5 4D29E5                          sub r13, r12                    
+   112                                  
+   113 000000C8 4C8D73FF                        lea r14, [rbx - 1]              ; cy = yy - counter - 1
+   114 000000CC 4D29E6                          sub r14, r12                    ;
+   115                                  
+   116 000000CF 4D8D53FF                        lea r10, [r11 - 1]              ; length--
+   117 000000D3 E83F000000                      call walk_down_white            
+   118                                  
+   119 000000D8 4983FA00                        cmp r10, 0                      
+   120 000000DC 7D16                            jge not_marker                  
+   121                                          
+   122 000000DE 890C86                          mov dword [rsi + rax * 4 ], ecx ; Store xx
+   123 000000E1 498D69FF                        lea rbp, [r9 - 1]               
+   124 000000E5 4829DD                          sub rbp, rbx                    
+   125 000000E8 892C82                          mov dword [rdx + rax * 4 ], ebp ; Store yy
+   126                                  
+   127 000000EB 48FFC0                          inc rax                         ; marker counter++
+   128 000000EE 4883F832                        cmp rax, 50                     ; If there are too many markers, then stop.
+   129 000000F2 7D18                            jge fin                         
+   130                                  
+   131                                  not_marker:                             
+   132 000000F4 48FFC3                          inc rbx                         ; yy++
+   133 000000F7 4C39CB                          cmp rbx, r9                     ; Check yy against height
+   134 000000FA 0F8C21FFFFFF                    jl height_loop                  ; if yy != height
+   135                                  
+   136 00000100 48FFC1                          inc rcx                         ; xx++
+   137 00000103 4C39C1                          cmp rcx, r8                    
+   138 00000106 0F8C12FFFFFF                    jl width_loop                   
+   139                                  fin:
+   140 0000010C 415F                            pop r15                         
+   141 0000010E 415E                            pop r14                         
+   142 00000110 415D                            pop r13                         
+   143 00000112 415C                            pop r12                         
+   144 00000114 5B                              pop rbx
+   145 00000115 5D                              pop rbp
+   146 00000116 C3                              ret
+   147                                  
+   148                                  ; Flags. The left bit represents "Go left", and the right bit represents "Go on black".
+   149                                  walk_down_white:
+   150 00000117 41BF00000000                    mov r15, 0b00                   ; Go down on white      
+   151 0000011D EB16                            jmp walk_strip          
+   152                                  
+   153                                  walt_left_white:
+   154 0000011F 41BF02000000                    mov r15, 0b10                   ; Go left on white
+   155 00000125 EB0E                            jmp walk_strip
+   156                                  
+   157                                  walk_down_black:
+   158 00000127 41BF01000000                    mov r15, 0b01                   ; Go down on black
+   159 0000012D EB06                            jmp walk_strip
+   160                                          
+   161                                  walk_left_black:
+   162 0000012F 41BF03000000                    mov r15, 0b11                   ; Go left on black
+   163                                  
+   164                                  walk_strip:
+   165 00000135 E843000000                      call is_black                   ; Check the color. This function will set the third bit of our flags to 1 if the color is black.
+   166                                  
+   167 0000013A 4983FF04                        cmp r15, 0b100                  
+   168 0000013E 743C                            je walk_strip_return            
+   169 00000140 4983FF06                        cmp r15, 0b110                 
+   170 00000144 7436                            je walk_strip_return            
+   171 00000146 4983FF01                        cmp r15, 0b001                  
+   172 0000014A 7430                            je walk_strip_return            
+   173 0000014C 4983FF03                        cmp r15, 0b011                  
+   174 00000150 742A                            je walk_strip_return
+   175                                  
+   176 00000152 49FFCA                          dec r10                         ; lenght--
+   177 00000155 4831ED                          xor rbp, rbp                    
+   178 00000158 49F7C702000000                  test r15, 0b010                 
+   179                                  
+   180 0000015F 400F95C5                        setnz bpl                       ; Set a one (setnz) if we are moving left in rbp (bpl - нижние 8 бита)
+   181 00000163 4929ED                          sub r13, rbp                    ; x - 0/1
+   182 00000166 4883F501                        xor rbp, 1                      
+   183 0000016A 4929EE                          sub r14, rbp                    ; y - 1/0
+   184                                  
+   185 0000016D 49F7C705000000                  test r15, 0b101                 
+   186 00000174 75BF                            jnz walk_strip                  
+   187 00000176 4983FAFF                        cmp r10, -1                     
+   188 0000017A 75B9                            jne walk_strip                  
+   189                                  
+   190                                  walk_strip_return:                      
+   191 0000017C C3                              ret
+   192                                  
+   193                                  is_black:        
+   194 0000017D 4983E7FB                        and r15, ~0b100                 ; Set the flag bit indicating "Color is not black" to 0.
+   195                                          
+   196 00000181 4983FD00                        cmp r13, 0                      ; cx < 0 -> is_black_return
+   197 00000185 7C34                            jl is_black_return              
+   198 00000187 4D39C5                          cmp r13, r8                     ; Now compare the X against the width.
+   199 0000018A 7D2F                            jge is_black_return             ; >=
+   200                                  
+   201 0000018C 4983FE00                        cmp r14, 0                      
+   202 00000190 7C29                            jl is_black_return              
+   203 00000192 4D39CE                          cmp r14, r9                    
+   204 00000195 7D24                            jge is_black_return             
+   205                                  
+   206 00000197 4B8D6C4003                      lea rbp, [r8 * 2 + r8 + 3]      ; Calculate the pixel address]
+   207 0000019C 4883E5FC                        and rbp, ~3                     ; Zero the last two bits. -> :4
+   208 000001A0 490FAFEE                        imul rbp, r14                   ; Multiply the width by the y
+   209 000001A4 4A8D6C6D00                      lea rbp, [rbp + r13 * 2]        ; +x*3
+   210 000001A9 4C01ED                          add rbp, r13                    
+   211                                  
+   212 000001AC 8B2C2F                          mov ebp, dword [rdi + rbp]      ; Load color 4 bytes
+   213 000001AF 81E5FFFFFF00                    and ebp, 0x00FFFFFF             
+   214 000001B5 7504                            jnz is_black_return             
+   215 000001B7 4983CF04                        or r15, 0b100                   ; Otherwise, set the flag to "black".
+   216                                  is_black_return:
+   217 000001BB C3                              ret                             ; And return the flag.
